@@ -5,24 +5,46 @@ import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
 /**
- * Live agent CLIs tied to a working directory — answers “where is this session actually running?”
- * for crowded terminal setups.
+ * Coarse activity hint from the OS scheduler (same letters `ps` uses: R run, S sleep, I idle, etc.).
+ */
+enum class ProcessActivityKind {
+    /** Runnable / on CPU (R, sometimes rare in a snapshot). */
+    Active,
+    /** Sleeping, idle, or waiting on I/O — normal for most agent CLIs between turns. */
+    IdleOrWaiting,
+    /** Stopped (job control). */
+    Stopped,
+    /** Defunct process. */
+    Zombie,
+    Unknown,
+}
+
+data class ProcessActivity(
+    val kind: ProcessActivityKind,
+    /** Raw `state` / `stat` field from ps. */
+    val rawState: String,
+) {
+    val shortLabel: String
+        get() = when (kind) {
+            ProcessActivityKind.Active -> "Active"
+            ProcessActivityKind.IdleOrWaiting -> "Idle / waiting"
+            ProcessActivityKind.Stopped -> "Stopped"
+            ProcessActivityKind.Zombie -> "Zombie"
+            ProcessActivityKind.Unknown -> "State ?"
+        }
+}
+
+/**
+ * Live agent CLI matched from argv, with cwd and scheduler state.
  */
 data class RunningAgent(
     val label: String,
     val pid: Long,
+    val activity: ProcessActivity,
     /** Resolved cwd when available; null if lsof/proc failed or disallowed. */
     val cwd: String?,
     /** Short command line for disambiguation. */
     val argvPreview: String,
-)
-
-/**
- * One directory with one line of summary text for cramped UIs.
- */
-data class RunningAgentByCwd(
-    val cwdDisplay: String,
-    val summaryLine: String,
 )
 
 private val homeDir = System.getProperty("user.home") ?: ""
@@ -38,6 +60,19 @@ private val agentMatchers: List<Pair<Regex, String>> = listOf(
     Regex("""cursor-agent""", RegexOption.IGNORE_CASE) to "Cursor",
 )
 
+internal fun classifyProcessState(raw: String): ProcessActivity {
+    val s = raw.trim()
+    if (s.isEmpty()) return ProcessActivity(ProcessActivityKind.Unknown, raw)
+    val c = s.first()
+    return when (c.uppercaseChar()) {
+        'R' -> ProcessActivity(ProcessActivityKind.Active, raw)
+        'T', 't' -> ProcessActivity(ProcessActivityKind.Stopped, raw)
+        'Z' -> ProcessActivity(ProcessActivityKind.Zombie, raw)
+        'S', 'I', 'D', 'U', 'W' -> ProcessActivity(ProcessActivityKind.IdleOrWaiting, raw)
+        else -> ProcessActivity(ProcessActivityKind.Unknown, raw)
+    }
+}
+
 private fun classifyAgent(argv: String): String? {
     for ((regex, label) in agentMatchers) {
         if (regex.containsMatchIn(argv)) return label
@@ -45,14 +80,16 @@ private fun classifyAgent(argv: String): String? {
     return null
 }
 
-private fun parsePsLine(line: String): Pair<Long, String>? {
-    val trimmed = line.trimStart()
-    val sp = trimmed.indexOf(' ')
-    if (sp <= 0) return null
-    val pid = trimmed.substring(0, sp).trim().toLongOrNull() ?: return null
-    val argv = trimmed.substring(sp + 1).trim()
+private val psPidStateArgs =
+    Regex("""^\s*(\d+)\s+(\S+)\s+(.*)$""")
+
+private fun parsePsLine(line: String): Triple<Long, String, String>? {
+    val m = psPidStateArgs.matchEntire(line.trim()) ?: return null
+    val pid = m.groupValues[1].toLongOrNull() ?: return null
+    val state = m.groupValues[2]
+    val argv = m.groupValues[3].trim()
     if (argv.isEmpty()) return null
-    return pid to argv
+    return Triple(pid, state, argv)
 }
 
 private fun resolveCwd(pid: Long): String? {
@@ -91,7 +128,7 @@ private fun cwdViaLsof(pid: Long): String? {
     }
 }
 
-private fun previewArgv(argv: String, maxLen: Int = 72): String {
+private fun previewArgv(argv: String, maxLen: Int = 96): String {
     val oneLine = argv.replace(Regex("\\s+"), " ").trim()
     return if (oneLine.length <= maxLen) oneLine else oneLine.take(maxLen - 1) + "…"
 }
@@ -106,9 +143,9 @@ internal fun shortenHomePath(absolute: String): String {
 internal fun listRunningAgents(): List<RunningAgent> {
     val os = System.getProperty("os.name").lowercase()
     val cmd = if (os.contains("mac") || os.contains("darwin")) {
-        listOf("ps", "-ax", "-o", "pid=,args=")
+        listOf("ps", "-ax", "-o", "pid=,state=,args=")
     } else {
-        listOf("ps", "-eo", "pid=,args=")
+        listOf("ps", "-eo", "pid=,stat=,args=")
     }
     val pb = ProcessBuilder(cmd)
     pb.redirectErrorStream(true)
@@ -125,7 +162,7 @@ internal fun listRunningAgents(): List<RunningAgent> {
     val agents = mutableListOf<RunningAgent>()
     for (line in lines) {
         if (line.isBlank()) continue
-        val (pid, argv) = parsePsLine(line) ?: continue
+        val (pid, stateToken, argv) = parsePsLine(line) ?: continue
         if (!seen.add(pid)) continue
         val label = classifyAgent(argv) ?: continue
         val cwd = resolveCwd(pid)
@@ -133,27 +170,11 @@ internal fun listRunningAgents(): List<RunningAgent> {
             RunningAgent(
                 label = label,
                 pid = pid,
+                activity = classifyProcessState(stateToken),
                 cwd = cwd,
                 argvPreview = previewArgv(argv),
             ),
         )
     }
-    return agents
-}
-
-internal fun summarizeAgentsByCwd(agents: List<RunningAgent>): List<RunningAgentByCwd> {
-    if (agents.isEmpty()) return emptyList()
-    val byCwd = agents.groupBy { it.cwd ?: "(cwd unknown)" }
-    return byCwd.entries
-        .sortedWith(compareByDescending<Map.Entry<String, List<RunningAgent>>> { it.value.size }.thenBy { it.key })
-        .map { (cwd, rows) ->
-            val display = if (cwd == "(cwd unknown)") cwd else shortenHomePath(cwd)
-            val byLabel = rows.groupingBy { it.label }.eachCount()
-                .entries.sortedByDescending { it.value }.joinToString(", ") { "${it.value}× ${it.key}" }
-            val pids = rows.map { it.pid }.sorted().joinToString(", ")
-            RunningAgentByCwd(
-                cwdDisplay = display,
-                summaryLine = "$byLabel  ·  pid $pids",
-            )
-        }
+    return agents.sortedWith(compareBy({ it.label }, { it.pid }))
 }

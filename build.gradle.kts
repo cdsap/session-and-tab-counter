@@ -3,7 +3,6 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 plugins {
     kotlin("jvm") version "2.3.20"
     kotlin("plugin.compose") version "2.3.20"
-    kotlin("plugin.serialization") version "2.3.20"
     id("org.jetbrains.compose") version "1.10.2"
 }
 
@@ -19,7 +18,6 @@ repositories {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.materialIconsExtended)
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
 }
 
 compose.desktop {
@@ -28,11 +26,11 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "AgentSessionTabCounter"
+            packageName = "RunningAgentTracker"
             packageVersion = "1.0.0"
 
             windows {
-                menuGroup = "Agent session & tab counter"
+                menuGroup = "Running agent tracker"
                 upgradeUuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
             }
         }

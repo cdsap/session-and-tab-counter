@@ -39,194 +39,18 @@ import java.awt.GraphicsEnvironment
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
-import kotlin.io.path.extension
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 
 private val HOME_DIR = Path.of(System.getProperty("user.home"))
 private val CHROME_DIR = HOME_DIR.resolve("Library/Application Support/Google/Chrome/Default/Profile State")
 
-private enum class CountStrategy {
-    DIRECT_CHILD_DIRECTORIES,
-    RECURSIVE_SESSION_FILES,
-    /** Deduplicate session ids from loose session_*.json / *.jsonl artifacts (e.g. Hermes layout). */
-    UNIQUE_SESSION_ARTIFACT_IDS,
-}
-
-private data class AgentSource(
-    val path: Path,
-    val strategy: CountStrategy,
-)
-
-private data class AgentSpec(
-    val label: String,
-    val sources: List<AgentSource>,
-    /** Optional index file: JSON object size ≈ concurrent routed entries (when the agent uses this pattern). */
-    val sessionsIndexPath: Path? = null,
-)
-
-data class AgentSessionCount(
-    val label: String,
-    /** Stored session artifacts on disk (deduped ids when using [CountStrategy.UNIQUE_SESSION_ARTIFACT_IDS]). */
-    val count: Int,
-    /** Entries in `sessions.json` when present — “active” routings, not total history. */
-    val activeChannels: Int? = null,
-)
-
-private val agentSpecs = listOf(
-    AgentSpec(
-        label = "Hermes",
-        sources = listOf(
-            AgentSource(
-                path = HOME_DIR.resolve(".hermes/sessions"),
-                strategy = CountStrategy.UNIQUE_SESSION_ARTIFACT_IDS,
-            ),
-        ),
-        sessionsIndexPath = HOME_DIR.resolve(".hermes/sessions/sessions.json"),
-    ),
-    AgentSpec(
-        label = "Claude",
-        sources = listOf(
-            AgentSource(
-                path = HOME_DIR.resolve(".cache/AI/Claude/ClaudeCode/history"),
-                strategy = CountStrategy.DIRECT_CHILD_DIRECTORIES,
-            ),
-        ),
-    ),
-    AgentSpec(
-        label = "Codex",
-        sources = listOf(
-            AgentSource(
-                path = HOME_DIR.resolve(".codex/sessions"),
-                strategy = CountStrategy.RECURSIVE_SESSION_FILES,
-            ),
-            AgentSource(
-                path = HOME_DIR.resolve(".hermes/hermes-agent/agent"),
-                strategy = CountStrategy.DIRECT_CHILD_DIRECTORIES,
-            ),
-        ),
-    ),
-    AgentSpec(
-        label = "Gemini",
-        sources = listOf(
-            AgentSource(
-                path = HOME_DIR.resolve(".gemini"),
-                strategy = CountStrategy.RECURSIVE_SESSION_FILES,
-            ),
-            AgentSource(
-                path = HOME_DIR.resolve(".config/gemini"),
-                strategy = CountStrategy.RECURSIVE_SESSION_FILES,
-            ),
-            AgentSource(
-                path = HOME_DIR.resolve("Library/Application Support/Gemini"),
-                strategy = CountStrategy.RECURSIVE_SESSION_FILES,
-            ),
-        ),
-    ),
-    AgentSpec(
-        label = "Cursor",
-        sources = listOf(
-            AgentSource(
-                path = HOME_DIR.resolve(".cursor/projects"),
-                strategy = CountStrategy.DIRECT_CHILD_DIRECTORIES,
-            ),
-            AgentSource(
-                path = HOME_DIR.resolve(".cursor-server"),
-                strategy = CountStrategy.DIRECT_CHILD_DIRECTORIES,
-            ),
-        ),
-    ),
-)
-
-private fun countDirectChildDirectories(path: Path): Int {
-    if (!path.exists()) return 0
-    return Files.list(path).use { paths ->
-        paths.filter { Files.isDirectory(it) }.count().toInt()
-    }
-}
-
-private fun isSessionFile(path: Path): Boolean {
-    if (!Files.isRegularFile(path)) return false
-    val fileName = path.fileName.toString()
-    if (fileName == "sessions.json") return false
-    if (fileName.startsWith("request_dump_")) return false
-    return path.extension == "json" || path.extension == "jsonl"
-}
-
-private fun countRecursiveSessionFiles(path: Path): Int {
-    if (!path.exists()) return 0
-    return Files.walk(path).use { paths ->
-        paths.filter(::isSessionFile).count().toInt()
-    }
-}
-
-private fun sessionArtifactIdFromPath(path: Path): String? {
-    if (!isSessionFile(path)) return null
-    val name = path.fileName.toString()
-    return when {
-        name.startsWith("session_") && name.endsWith(".json") ->
-            name.removeSuffix(".json").removePrefix("session_")
-        name.endsWith(".jsonl") ->
-            name.removeSuffix(".jsonl")
-        name.endsWith(".json") ->
-            name.removeSuffix(".json")
-        else -> null
-    }
-}
-
-private fun countUniqueSessionArtifacts(path: Path): Int {
-    if (!path.exists()) return 0
-    val ids = mutableSetOf<String>()
-    Files.walk(path).use { stream ->
-        stream.filter(Files::isRegularFile).forEach { p ->
-            sessionArtifactIdFromPath(p)?.let { ids.add(it) }
-        }
-    }
-    return ids.size
-}
-
-private fun countJsonObjectKeys(path: Path): Int {
-    if (!path.exists()) return 0
-    return try {
-        val root = Json.parseToJsonElement(Files.readString(path))
-        (root as? JsonObject)?.size ?: 0
-    } catch (_: Exception) {
-        0
-    }
-}
-
-private fun countAgentSessions(spec: AgentSpec): Result<AgentSessionCount> {
-    return try {
-        val count = spec.sources.sumOf { source ->
-            when (source.strategy) {
-                CountStrategy.DIRECT_CHILD_DIRECTORIES -> countDirectChildDirectories(source.path)
-                CountStrategy.RECURSIVE_SESSION_FILES -> countRecursiveSessionFiles(source.path)
-                CountStrategy.UNIQUE_SESSION_ARTIFACT_IDS -> countUniqueSessionArtifacts(source.path)
-            }
-        }
-        val active: Int? = spec.sessionsIndexPath?.let { p ->
-            if (p.exists()) countJsonObjectKeys(p) else null
-        }
-        Result.success(AgentSessionCount(spec.label, count, active))
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-}
-
-internal fun countAllSessions(): Pair<Int, List<AgentSessionCount>> {
-    val results = mutableListOf<AgentSessionCount>()
-    var total = 0
-
-    agentSpecs.forEach { spec ->
-        countAgentSessions(spec).onSuccess { row ->
-            results.add(row)
-            total += row.count
-        }
-    }
-
-    return total to results
+private fun activityColor(kind: ProcessActivityKind): Color = when (kind) {
+    ProcessActivityKind.Active -> Color(0xFF2E7D32)
+    ProcessActivityKind.IdleOrWaiting -> Color(0xFF1565C0)
+    ProcessActivityKind.Stopped -> Color(0xFFE65100)
+    ProcessActivityKind.Zombie -> Color(0xFFC62828)
+    ProcessActivityKind.Unknown -> Color.Gray
 }
 
 internal fun countChromeTabs(): Result<Int> {
@@ -244,10 +68,54 @@ internal fun countChromeTabs(): Result<Int> {
 }
 
 @Composable
+private fun RunningAgentRow(agent: RunningAgent) {
+    val loc = when {
+        agent.cwd == null -> "(cwd unknown — lsof may need permissions)"
+        !Path.of(agent.cwd).exists() -> "${shortenHomePath(agent.cwd)} (path missing?)"
+        else -> shortenHomePath(agent.cwd)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = agent.label,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        Column(horizontalAlignment = Alignment.End) {
+            Text(
+                text = agent.activity.shortLabel,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                color = activityColor(agent.activity.kind),
+            )
+            Text(
+                text = "ps ${agent.activity.rawState}".trim(),
+                fontSize = 11.sp,
+                color = Color.Gray,
+            )
+        }
+    }
+    Text(
+        text = loc,
+        fontSize = 12.sp,
+        color = Color(0xFF424242),
+        modifier = Modifier.padding(bottom = 2.dp),
+    )
+    Text(
+        text = "pid ${agent.pid} · ${agent.argvPreview}",
+        fontSize = 11.sp,
+        color = Color(0xFF607D8B),
+    )
+}
+
+@Composable
 fun CounterView(
-    agentCounts: List<AgentSessionCount>,
-    runningByCwd: List<RunningAgentByCwd>,
-    runningProcessCount: Int,
+    runningAgents: List<RunningAgent>,
     chromeTabsCount: Int,
     lastUpdated: String?,
 ) {
@@ -264,85 +132,43 @@ fun CounterView(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = "Agent session & tab counter",
-                fontSize = 24.sp,
+                text = "Running agent tracker",
+                fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
             )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 8.dp),
-            ) {
-                agentCounts.forEach { row ->
-                    val display = buildString {
-                        append(row.count)
-                        row.activeChannels?.let { append(" ($it active)") }
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            text = "${row.label}:",
-                            fontSize = 18.sp,
-                            fontWeight = if (row.count > 0) FontWeight.Bold else FontWeight.Normal,
-                        )
-                        Text(
-                            text = display,
-                            fontSize = 24.sp,
-                            color = Color(0xFF2196F3),
-                        )
-                    }
-                    Spacer(modifier = Modifier.height(4.dp))
-                }
-            }
-
             Text(
-                text = "Running now (by folder)",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-            )
-            Text(
-                text = if (runningProcessCount == 0) {
-                    "No matching CLIs in ps — add regexes in RunningAgents.kt if needed."
-                } else {
-                    "$runningProcessCount process(es) in ${runningByCwd.size} folder(s)"
-                },
+                text = "Live CLIs · working directory · scheduler state (from ps)",
                 fontSize = 12.sp,
                 color = Color.Gray,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 6.dp),
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp),
-            ) {
-                runningByCwd.forEach { row ->
-                    Text(
-                        text = row.cwdDisplay,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        text = row.summaryLine,
-                        fontSize = 12.sp,
-                        color = Color(0xFF1565C0),
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
+
+            if (runningAgents.isEmpty()) {
+                Text(
+                    text = "No matching agent processes right now.\n" +
+                        "When you run claude-code, codex, gemini-cli, cursor-agent, etc., they will appear here.",
+                    fontSize = 14.sp,
+                    color = Color.Gray,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp),
+                ) {
+                    runningAgents.forEachIndexed { i, agent ->
+                        if (i > 0) {
+                            Divider(modifier = Modifier.padding(vertical = 4.dp))
+                        }
+                        RunningAgentRow(agent)
+                    }
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
             Divider()
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -354,13 +180,13 @@ fun CounterView(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = "Chrome Tabs:",
-                    fontSize = 18.sp,
+                    text = "Chrome tabs (hint):",
+                    fontSize = 15.sp,
                     fontWeight = if (chromeTabsCount > 0) FontWeight.Bold else FontWeight.Normal,
                 )
                 Text(
                     text = chromeTabsCount.toString(),
-                    fontSize = 24.sp,
+                    fontSize = 22.sp,
                     color = Color(0xFFFF9800),
                 )
             }
@@ -380,8 +206,8 @@ fun CounterView(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Refreshes every 5s",
-                    fontSize = 12.sp,
+                    text = "Refreshes every 5s · Idle/sleep is normal between tool calls",
+                    fontSize = 11.sp,
                     color = Color.Gray,
                 )
             }
@@ -392,21 +218,25 @@ fun CounterView(
 @Composable
 @Preview
 fun AppPreview() {
-    val sampleAgents = listOf(
-        AgentSessionCount("Hermes", 5, 1),
-        AgentSessionCount("Claude", 2),
-        AgentSessionCount("Codex", 1),
-        AgentSessionCount("Gemini", 0),
-        AgentSessionCount("Cursor", 3),
+    val sample = listOf(
+        RunningAgent(
+            label = "Claude",
+            pid = 1001L,
+            activity = ProcessActivity(ProcessActivityKind.IdleOrWaiting, "S"),
+            cwd = "/Users/me/projects/demo",
+            argvPreview = "node …/claude-code …",
+        ),
+        RunningAgent(
+            label = "Codex",
+            pid = 2002L,
+            activity = ProcessActivity(ProcessActivityKind.Active, "R"),
+            cwd = "/Users/me/work",
+            argvPreview = "openai.cli.codex …",
+        ),
     )
     MaterialTheme {
         CounterView(
-            agentCounts = sampleAgents,
-            runningByCwd = listOf(
-                RunningAgentByCwd("~/projects/alpha", "2× Claude  ·  pid 1001, 1002"),
-                RunningAgentByCwd("~/work/beta", "1× Codex  ·  pid 2002"),
-            ),
-            runningProcessCount = 3,
+            runningAgents = sample,
             chromeTabsCount = 12,
             lastUpdated = "10:15 PM",
         )
@@ -419,80 +249,71 @@ fun main() {
         return
     }
     application {
-    var agentCounts by remember { mutableStateOf(emptyList<AgentSessionCount>()) }
-    var runningByCwd by remember { mutableStateOf(emptyList<RunningAgentByCwd>()) }
-    var runningProcessCount by remember { mutableStateOf(0) }
-    var chromeTabsCount by remember { mutableStateOf(0) }
-    var lastUpdated by remember { mutableStateOf<String?>(null) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+        var runningAgents by remember { mutableStateOf(emptyList<RunningAgent>()) }
+        var chromeTabsCount by remember { mutableStateOf(0) }
+        var lastUpdated by remember { mutableStateOf<String?>(null) }
+        var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    fun refreshCounts() {
-        val (_, agentResults: List<AgentSessionCount>) = countAllSessions()
-        agentCounts = agentResults
+        fun refreshCounts() {
+            runningAgents = listRunningAgents()
 
-        val live = listRunningAgents()
-        runningByCwd = summarizeAgentsByCwd(live)
-        runningProcessCount = live.size
+            countChromeTabs().onSuccess { count ->
+                chromeTabsCount = count
+                errorMessage = null
+            }.onFailure { e ->
+                if (errorMessage == null) {
+                    errorMessage = "Chrome count not available (is Chrome running?): ${e.message}"
+                }
+            }
 
-        countChromeTabs().onSuccess { count ->
-            chromeTabsCount = count
-            errorMessage = null
-        }.onFailure { e ->
-            if (errorMessage == null) {
-                errorMessage = "Chrome count not available (is Chrome running?): ${e.message}"
+            lastUpdated = java.time.LocalTime.now().withNano(0).toString()
+        }
+
+        LaunchedEffect(Unit) {
+            refreshCounts()
+            while (true) {
+                delay(TimeUnit.SECONDS.toMillis(5))
+                refreshCounts()
             }
         }
 
-        lastUpdated = java.time.LocalTime.now().withNano(0).toString()
-    }
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "Running agent tracker",
+            state = androidx.compose.ui.window.rememberWindowState(width = 560.dp, height = 640.dp),
+        ) {
+            MaterialTheme {
+                Surface(color = MaterialTheme.colors.surface) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        IconButton(
+                            onClick = { refreshCounts() },
+                            modifier = Modifier
+                                .align(Alignment.End)
+                                .padding(8.dp),
+                        ) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Refresh")
+                        }
 
-    LaunchedEffect(Unit) {
-        refreshCounts()
-        while (true) {
-            delay(TimeUnit.SECONDS.toMillis(5))
-            refreshCounts()
-        }
-    }
+                        Divider()
 
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "Agent session & tab counter",
-        state = androidx.compose.ui.window.rememberWindowState(width = 520.dp, height = 520.dp),
-    ) {
-        MaterialTheme {
-            Surface(color = MaterialTheme.colors.surface) {
-                Column(modifier = Modifier.fillMaxSize()) {
-                    IconButton(
-                        onClick = { refreshCounts() },
-                        modifier = Modifier
-                            .align(Alignment.End)
-                            .padding(8.dp),
-                    ) {
-                        Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Refresh")
-                    }
+                        if (errorMessage != null) {
+                            Text(
+                                text = errorMessage!!,
+                                color = Color.Red,
+                                modifier = Modifier.padding(16.dp),
+                            )
+                        }
 
-                    Divider()
-
-                    if (errorMessage != null) {
-                        Text(
-                            text = errorMessage!!,
-                            color = Color.Red,
-                            modifier = Modifier.padding(16.dp),
+                        CounterView(
+                            runningAgents = runningAgents,
+                            chromeTabsCount = chromeTabsCount,
+                            lastUpdated = lastUpdated,
                         )
                     }
-
-                    CounterView(
-                        agentCounts = agentCounts,
-                        runningByCwd = runningByCwd,
-                        runningProcessCount = runningProcessCount,
-                        chromeTabsCount = chromeTabsCount,
-                        lastUpdated = lastUpdated,
-                    )
                 }
             }
         }
-    }
     }
 }

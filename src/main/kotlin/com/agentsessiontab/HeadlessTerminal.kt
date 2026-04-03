@@ -20,10 +20,10 @@ object HeadlessTerminal {
     private val tux = """
         |$cyan       .___.$reset
         |$cyan      /     \ $white   ___$reset
-        |$cyan  /--|  $white(o o)$cyan  |--\ $dim  Agent session tab$reset
+        |$cyan  /--|  $white(o o)$cyan  |--\ $dim  Running agents$reset
         |$cyan /   |  $white\ ^ /$cyan  |   \\
         |$cyan/    '.__$white\m/${cyan}__.'    \\
-        |$cyan       /  $yellow>>$cyan  \ $yellow~~$reset$dim  ~ tux approves ~/.sessions ~$reset
+        |$cyan       /  $yellow>>$cyan  \ $yellow~~$reset$dim  ~ ps + cwd ~$reset
         |$cyan      /________\\
     """.trimMargin().trim()
 
@@ -31,54 +31,46 @@ object HeadlessTerminal {
         Runtime.getRuntime().addShutdownHook(thread(start = false) { print(reset) })
 
         while (true) {
-            val (_, agents) = countAllSessions()
             val running = listRunningAgents()
-            val byCwd = summarizeAgentsByCwd(running)
             val chromeResult = countChromeTabs()
             val stamp = java.time.LocalTime.now().withNano(0)
 
             print(clearScreen)
             println(tux)
             println()
-            println("$bold$cyan══ Agent session & tab counter $dim(headless)$cyan ══$reset")
+            println("$bold$cyan══ Running agent tracker $dim(headless)$cyan ══$reset")
             println("$dim$stamp  ·  every 5s  ·  Ctrl+C to quit$reset")
             println()
 
-            agents.forEach { row ->
-                val label = row.label.padEnd(10)
-                val n = buildString {
-                    append(row.count)
-                    row.activeChannels?.let { append(" ($it active)") }
-                }
-                println("  $bold$label$reset  $green$n$reset")
-            }
-
-            println()
-            println("$bold$cyan══ Running agents (by cwd) ══$reset")
-            if (byCwd.isEmpty()) {
-                println("  $dim(no processes matched claude-code / codex / gemini / … — edit RunningAgents.kt)$reset")
+            if (running.isEmpty()) {
+                println("  $dim(no matching agent CLIs in ps — start claude-code, codex, …)$reset")
             } else {
-                println("  $dim${running.size} process(es) · ${byCwd.size} dir(s)$reset")
+                println("  $dim${running.size} process(es)$reset")
                 println()
-                val cap = 40
-                byCwd.take(cap).forEach { g ->
-                    println("  $bold${g.cwdDisplay}$reset")
-                    println("    $dim${g.summaryLine}$reset")
-                }
-                if (byCwd.size > cap) {
-                    println("  $dim… ${byCwd.size - cap} more directories$reset")
+                running.forEach { a ->
+                    val loc = if (a.cwd == null) "(cwd unknown)" else shortenHomePath(a.cwd)
+                    val act = when (a.activity.kind) {
+                        ProcessActivityKind.Active -> green
+                        ProcessActivityKind.IdleOrWaiting -> cyan
+                        ProcessActivityKind.Stopped -> yellow
+                        ProcessActivityKind.Zombie -> "${CSI}31m"
+                        ProcessActivityKind.Unknown -> dim
+                    }
+                    println("  $bold${a.label}$reset  ${act}${a.activity.shortLabel}$reset  ${dim}ps ${a.activity.rawState}$reset")
+                    println("    $dim$loc$reset")
+                    println("    $dim pid ${a.pid} · ${a.argvPreview}$reset")
+                    println()
                 }
             }
 
-            println()
             chromeResult.onSuccess { tabs ->
-                println("  ${bold}Chrome tabs$reset  $yellow$tabs$reset")
+                println("  ${bold}Chrome tabs (hint)$reset  $yellow$tabs$reset")
             }.onFailure { e ->
                 println("  ${bold}Chrome$reset     $dim${e.message}$reset")
             }
 
             println()
-            println("${dim}Open a desktop session for the full Compose UI.$reset")
+            println("${dim}Idle/sleep between tool calls is normal · open a desktop session for the Compose UI$reset")
 
             Thread.sleep(5_000)
         }
