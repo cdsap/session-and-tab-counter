@@ -1,6 +1,6 @@
 # Running agent tracker
 
-Desktop utility (Compose for Desktop) that lists **AI agent CLIs that are running right now**: **PID**, **cwd** (macOS: `lsof -Fn` on the cwd fd, then classic `lsof` table; Linux: `/proc/pid/cwd` then `lsof`), **upt** (**`etime`** from `ps`), **CPU %** and **RSS** from `ps`, plus scheduler **state** (`R` / `S` / …). **Token or context-window usage** is not available from the OS—use each vendor’s own UI or logs. It does **not** scan session folders on disk.
+Desktop utility (Compose for Desktop, dark Material 3 UI) that lists **terminal / CLI agent processes**: **PID**, **cwd**, **`ps` uptime / CPU / RSS**, and scheduler **state**. **Claude Desktop** (the `.app` GUI) is **intentionally ignored** so the list matches “what’s running in the shell.” **Model / max-token hints** are **best-effort**: regex scan of local JSON (e.g. `~/.claude/settings.json`, project `.claude/settings.local.json`, Cursor `settings.json`) plus `--model` on the command line—not live token counts from the model API.
 
 ## Who gets detected
 

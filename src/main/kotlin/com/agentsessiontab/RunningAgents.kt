@@ -53,6 +53,8 @@ data class RunningAgent(
     val rssKiB: Long?,
     /** CPU % since process start (or last snapshot semantics per OS) from ps. */
     val cpuPercent: Double?,
+    /** Model / token hints from config files + argv (not live OS context). */
+    val configHints: List<String> = emptyList(),
 )
 
 private val homeDir = System.getProperty("user.home") ?: ""
@@ -91,6 +93,18 @@ private fun classifyAgent(argv: String): String? {
         if (regex.containsMatchIn(argv)) return label
     }
     return null
+}
+
+/** Claude Desktop (.app / Electron) — not Claude Code CLI; exclude from tracker. */
+private fun isClaudeDesktopApp(argv: String): Boolean {
+    if (argv.contains("Claude Desktop", ignoreCase = true)) return true
+    val inAppBundle = Regex("""[/\\]Claude\.app[/\\]""", RegexOption.IGNORE_CASE).containsMatchIn(argv)
+    if (!inAppBundle) return false
+    val cliMarkers = Regex(
+        """claude-code|@anthropic-ai/claude-code|@anthropic-ai/claude(\s|/|\\|$)""",
+        RegexOption.IGNORE_CASE,
+    ).containsMatchIn(argv)
+    return !cliMarkers
 }
 
 /** pid, state, rss(KiB), etime, pcpu, args… */
@@ -252,7 +266,9 @@ internal fun listRunningAgents(): List<RunningAgent> {
         val parsed = parsePsLine(line) ?: continue
         if (!seen.add(parsed.pid)) continue
         val label = classifyAgent(parsed.argv) ?: continue
+        if (label == "Claude" && isClaudeDesktopApp(parsed.argv)) continue
         val (cwd, cwdNote) = resolveCwd(parsed.pid)
+        val hints = gatherConfigHints(label, cwd, parsed.argv)
         agents.add(
             RunningAgent(
                 label = label,
@@ -264,6 +280,7 @@ internal fun listRunningAgents(): List<RunningAgent> {
                 uptime = parsed.etime,
                 rssKiB = parsed.rssKiB,
                 cpuPercent = parsed.pcpu,
+                configHints = hints,
             ),
         )
     }

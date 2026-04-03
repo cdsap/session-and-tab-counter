@@ -1,26 +1,31 @@
 package com.agentsessiontab
 
 import androidx.compose.desktop.ui.tooling.preview.Preview
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material.Card
-import androidx.compose.material.Divider
-import androidx.compose.material.Icon
-import androidx.compose.material.IconButton
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Surface
-import androidx.compose.material.Text
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,7 +34,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -40,63 +47,131 @@ import java.util.Locale
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
-private fun activityColor(kind: ProcessActivityKind): Color = when (kind) {
-    ProcessActivityKind.Active -> Color(0xFF2E7D32)
-    ProcessActivityKind.IdleOrWaiting -> Color(0xFF1565C0)
-    ProcessActivityKind.Stopped -> Color(0xFFE65100)
-    ProcessActivityKind.Zombie -> Color(0xFFC62828)
-    ProcessActivityKind.Unknown -> Color.Gray
+private val TrackerDark = darkColorScheme(
+    primary = Color(0xFF8AB4FF),
+    onPrimary = Color(0xFF061018),
+    secondary = Color(0xFF5EEAD4),
+    tertiary = Color(0xFFE2A6FF),
+    background = Color(0xFF070A0D),
+    onBackground = Color(0xFFE6EDF5),
+    surface = Color(0xFF0F141A),
+    onSurface = Color(0xFFE6EDF5),
+    surfaceVariant = Color(0xFF1A2430),
+    onSurfaceVariant = Color(0xFFB6C4D4),
+    outline = Color(0xFF3D5366),
+    outlineVariant = Color(0xFF2A3844),
+)
+
+private val GradientTop = Color(0xFF0A1018)
+private val GradientBottom = Color(0xFF070A0D)
+
+@Composable
+private fun TrackerTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = TrackerDark,
+        content = content,
+    )
+}
+
+private fun activityTint(kind: ProcessActivityKind): Color = when (kind) {
+    ProcessActivityKind.Active -> Color(0xFF6EE7B7)
+    ProcessActivityKind.IdleOrWaiting -> Color(0xFF7EB6FF)
+    ProcessActivityKind.Stopped -> Color(0xFFFFB86B)
+    ProcessActivityKind.Zombie -> Color(0xFFFF7B8A)
+    ProcessActivityKind.Unknown -> Color(0xFF94A3B8)
 }
 
 @Composable
-private fun RunningAgentRow(agent: RunningAgent) {
-    val loc = cwdDisplayForUi(agent)
-    val cpuStr = agent.cpuPercent?.let { v -> String.format(Locale.US, "%.1f%% CPU", v) } ?: "CPU —"
-    val rssStr = "RSS ${formatRssKiB(agent.rssKiB)}"
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+private fun StatusPill(activity: ProcessActivity) {
+    val tint = activityTint(activity.kind)
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = tint.copy(alpha = 0.18f),
+        contentColor = tint,
     ) {
-        Text(
-            text = agent.label,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-        )
-        Column(horizontalAlignment = Alignment.End) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
             Text(
-                text = agent.activity.shortLabel,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = activityColor(agent.activity.kind),
+                text = activity.shortLabel,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
             )
             Text(
-                text = "ps ${agent.activity.rawState}".trim(),
-                fontSize = 11.sp,
-                color = Color.Gray,
+                text = "ps ${activity.rawState}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }
-    Text(
-        text = loc,
-        fontSize = 13.sp,
-        fontWeight = FontWeight.Medium,
-        color = Color(0xFF1B5E20),
-        modifier = Modifier.padding(bottom = 4.dp),
-    )
-    Text(
-        text = "Up ${agent.uptime} · $cpuStr · $rssStr",
-        fontSize = 12.sp,
-        color = Color(0xFF424242),
-        modifier = Modifier.padding(bottom = 4.dp),
-    )
-    Text(
-        text = "pid ${agent.pid} · ${agent.argvPreview}",
-        fontSize = 11.sp,
-        color = Color(0xFF607D8B),
-    )
+}
+
+@Composable
+private fun RunningAgentCard(agent: RunningAgent) {
+    val loc = cwdDisplayForUi(agent)
+    val cpuStr = agent.cpuPercent?.let { v -> String.format(Locale.US, "%.1f%% CPU", v) } ?: "CPU —"
+    val rssStr = formatRssKiB(agent.rssKiB)
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                Text(
+                    text = agent.label,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                StatusPill(agent.activity)
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            Text(
+                text = loc,
+                style = MaterialTheme.typography.bodyMedium,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Up ${agent.uptime} · $cpuStr · RSS $rssStr",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (agent.configHints.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = "Config hints (files / argv, not live usage)",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    fontWeight = FontWeight.Medium,
+                )
+                agent.configHints.forEach { line ->
+                    Text(
+                        text = "· $line",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "pid ${agent.pid} · ${agent.argvPreview}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+                fontFamily = FontFamily.Monospace,
+            )
+        }
+    }
 }
 
 @Composable
@@ -104,80 +179,44 @@ fun CounterView(
     runningAgents: List<RunningAgent>,
     lastUpdated: String?,
 ) {
-    Card(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
-        elevation = 4.dp,
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 16.dp),
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+        Text(
+            text = "Live agent processes",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = "cwd · uptime · CPU · RSS from the OS · model/token sniffs from local JSON when present",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
+        )
+
+        if (runningAgents.isEmpty()) {
             Text(
-                text = "Running agent tracker",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
+                text = "No matching CLIs. Claude Desktop is hidden on purpose — only terminals / agents like Claude Code, Codex, Cursor…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        } else {
+            runningAgents.forEach { agent ->
+                RunningAgentCard(agent)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+        if (!lastUpdated.isNullOrEmpty()) {
             Text(
-                text = "Live CLIs · cwd (lsof /proc) · uptime & CPU & RSS from ps",
-                fontSize = 12.sp,
-                color = Color.Gray,
-                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+                text = "Last poll: $lastUpdated · auto every 5s",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
             )
-
-            if (runningAgents.isEmpty()) {
-                Text(
-                    text = "No matching agent processes right now.\n" +
-                        "When you run claude-code, codex, gemini-cli, cursor-agent, etc., they will appear here.",
-                    fontSize = 14.sp,
-                    color = Color.Gray,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                )
-            } else {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
-                ) {
-                    runningAgents.forEachIndexed { i, agent ->
-                        if (i > 0) {
-                            Divider(modifier = Modifier.padding(vertical = 4.dp))
-                        }
-                        RunningAgentRow(agent)
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                if (!lastUpdated.isNullOrEmpty()) {
-                    Text(
-                        text = "Last updated: $lastUpdated",
-                        fontSize = 12.sp,
-                        color = Color.Gray,
-                    )
-                }
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Refreshes every 5s · Token/context use is not from the OS (use each agent’s UI)",
-                    fontSize = 11.sp,
-                    color = Color.Gray,
-                )
-                Text(
-                    text = "Idle/sleep between tool calls is normal",
-                    fontSize = 10.sp,
-                    color = Color.Gray,
-                )
-            }
         }
     }
 }
@@ -196,6 +235,7 @@ fun AppPreview() {
             uptime = "01:42:07",
             rssKiB = 186_000L,
             cpuPercent = 1.2,
+            configHints = listOf("~/.claude/settings.json · model field(s): claude-sonnet-4-20250514"),
         ),
         RunningAgent(
             label = "Codex",
@@ -209,11 +249,10 @@ fun AppPreview() {
             cpuPercent = 8.9,
         ),
     )
-    MaterialTheme {
-        CounterView(
-            runningAgents = sample,
-            lastUpdated = "10:15 PM",
-        )
+    TrackerTheme {
+        Surface(color = MaterialTheme.colorScheme.background) {
+            CounterView(sample, "10:15 PM")
+        }
     }
 }
 
@@ -242,28 +281,62 @@ fun main() {
         Window(
             onCloseRequest = ::exitApplication,
             title = "Running agent tracker",
-            state = androidx.compose.ui.window.rememberWindowState(width = 560.dp, height = 640.dp),
+            state = androidx.compose.ui.window.rememberWindowState(width = 600.dp, height = 720.dp),
         ) {
-            MaterialTheme {
-                Surface(color = MaterialTheme.colors.surface) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        IconButton(
-                            onClick = { refreshCounts() },
+            TrackerTheme {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(GradientTop, GradientBottom),
+                            ),
+                        ),
+                ) {
+                    Column(Modifier.fillMaxSize()) {
+                        Row(
                             modifier = Modifier
-                                .align(Alignment.End)
-                                .padding(8.dp),
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Refresh")
+                            Column(Modifier.padding(start = 8.dp, top = 4.dp)) {
+                                Text(
+                                    text = "Agent tracker",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = "CLIs only — no Claude Desktop",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(
+                                onClick = { refreshCounts() },
+                                modifier = Modifier.padding(4.dp),
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Refresh")
+                            }
                         }
-
-                        Divider()
-
-                        CounterView(
-                            runningAgents = runningAgents,
-                            lastUpdated = lastUpdated,
-                        )
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f),
+                            color = Color.Transparent,
+                        ) {
+                            CounterView(
+                                runningAgents = runningAgents,
+                                lastUpdated = lastUpdated,
+                            )
+                        }
                     }
                 }
             }

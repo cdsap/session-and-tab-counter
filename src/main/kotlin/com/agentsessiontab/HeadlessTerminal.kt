@@ -38,7 +38,7 @@ object HeadlessTerminal {
             print(clearScreen)
             println(tux)
             println()
-            println("$bold$cyan══ Running agent tracker $dim(headless)$cyan ══$reset")
+            println("$bold$cyan══ Agent tracker $dim(headless · CLIs only · no Claude Desktop)$cyan ══$reset")
             println("$dim$stamp  ·  every 5s  ·  Ctrl+C to quit$reset")
             println()
 
@@ -62,12 +62,15 @@ object HeadlessTerminal {
                     println("    $bold cwd$reset  $loc")
                     println("    ${dim}up ${a.uptime} · CPU $cpu · RSS $rss$reset")
                     println("    $dim pid ${a.pid} · ${a.argvPreview}$reset")
+                    a.configHints.forEach { h ->
+                        println("    $yellow·$reset $dim$h$reset")
+                    }
                     println()
                 }
             }
 
             println()
-            println("${dim}Tokens/context: not from OS — check agent UI · Idle/sleep between tool calls is normal$reset")
+            println("${dim}Config lines = JSON/argv sniff, not live counts · Idle/sleep between turns is normal$reset")
 
             Thread.sleep(5_000)
         }
