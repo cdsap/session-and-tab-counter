@@ -15,17 +15,44 @@ Processes whose command line matches heuristics in `RunningAgents.kt` (Claude Co
 
 If **cwd** stays unknown or wrong, the tracker process must be allowed to inspect others: on macOS grant **Full Disk Access** (or equivalent) to the JVM/terminal running the app so `lsof` can read cwd; on Linux run as a user that can read `/proc/<pid>/cwd` and run `lsof`.
 
-## Build & run
+## Run from the repo
+
+**Desktop window** (Compose UI):
 
 ```bash
 ./gradlew run
+# or shorter alias:
+./gradlew agents
 ```
 
-Packaging:
+**Terminal UI only** (ANSI refresh loop — use inside **GNU screen**, **tmux**, SSH, or whenever you want **no Swing window** even if you have a display):
+
+```bash
+AGENT_TRACKER_TERMINAL=1 ./gradlew agents
+```
+
+Same effect via Gradle (forwards `-Dagent.tracker.terminal=true` into the app JVM):
+
+```bash
+./gradlew agents -PagentTrackerTerminal
+./gradlew agents -Ptty
+```
+
+Or when launching with `java` directly:
+
+```bash
+java -Dagent.tracker.terminal=true -jar …
+```
+
+If there is **no** graphical display, the app uses the terminal UI **automatically**; the options above **force** that mode when a display exists.
+
+## Packaging
 
 ```bash
 ./gradlew packageDistributionForCurrentOS
 ```
+
+Installable artifacts land under `build/compose/binaries/` (layout depends on OS).
 
 ## Stack
 
