@@ -79,6 +79,14 @@ internal fun gatherConfigHints(label: String, cwd: String?, argv: String): List<
             hintsFromFile(Path.of(home, "Library/Application Support/Cursor/User/settings.json"), "Cursor settings").forEach { acc.add(it) }
             hintsFromFile(Path.of(home, ".config/Cursor/User/settings.json"), "Cursor settings").forEach { acc.add(it) }
         }
+        "Gemini" -> {
+            hintsFromFile(Path.of(home, ".gemini/settings.json"), "~/.gemini/settings.json").forEach { acc.add(it) }
+            hintsFromFile(Path.of(home, ".gemini/config.json"), "~/.gemini/config.json").forEach { acc.add(it) }
+            hintsFromFile(Path.of(home, ".config/gemini/settings.json"), "~/.config/gemini").forEach { acc.add(it) }
+            if (cwd != null) {
+                hintsFromFile(Path.of(cwd, ".gemini/settings.json"), "project .gemini/settings.json").forEach { acc.add(it) }
+            }
+        }
         else -> {}
     }
     argvHintsOnly(argv).forEach { acc.add(it) }
@@ -92,6 +100,9 @@ private fun argvHintsOnly(argv: String): List<String> {
     }
     Regex("""(?:^|\s)-m(?:=|\s+)(\S+)""").findAll(argv).take(1).forEach { m ->
         if (out.none { it.contains("command line") }) out.add("command line · -m ${m.groupValues[1]}")
+    }
+    Regex("""(?:^|\s)--model-id(?:=|\s+)(\S+)""", RegexOption.IGNORE_CASE).findAll(argv).forEach { m ->
+        out.add("command line · --model-id ${m.groupValues[1]}")
     }
     return out
 }

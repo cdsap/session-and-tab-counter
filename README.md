@@ -4,7 +4,7 @@ Desktop utility (Compose for Desktop, dark Material 3 UI) that lists **terminal 
 
 ## Who gets detected
 
-Processes whose command line matches heuristics in `RunningAgents.kt` (Claude, Codex, Gemini, Hermes, Cursor, etc.). Claude Code is matched on many argv shapes (`claude` on `PATH`, `@anthropic-ai/claude-code`, `node`/`npx`/`bun` wrappers, etc.); if yours still does not appear, run `ps axww | grep -i claude`, note the exact `args` column, and add a regex in `RunningAgents.kt`.
+Processes whose command line matches heuristics in `RunningAgents.kt` (Claude Code, Codex, **Gemini** CLI, Hermes, Cursor, …). **Terminal emulators are not listed** — only the agent CLI process (e.g. `gemini`, `@google/gemini-cli`, `npx … gemini`). Gemini matches `@google/genai`, `uvx … gemini`, `gcloud … gemini`, bare `gemini` on `PATH`, etc. If something is missing, run `ps axww | grep -iE 'gemini|claude'` and extend the regex list.
 
 **Idle / waiting** is normal: most agent processes sleep between I/O and tool calls. **Active** (`R`) may appear only briefly in a 5s snapshot.
 

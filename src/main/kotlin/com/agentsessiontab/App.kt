@@ -192,7 +192,7 @@ fun CounterView(
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "cwd · uptime · CPU · RSS from the OS · model/token sniffs from local JSON when present",
+            text = "Not the terminal window — only agent CLIs (Claude Code, Codex, Gemini, Cursor, …). cwd · uptime · CPU · RSS · config JSON sniffs",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
@@ -200,7 +200,7 @@ fun CounterView(
 
         if (runningAgents.isEmpty()) {
             Text(
-                text = "No matching CLIs. Claude Desktop is hidden on purpose — only terminals / agents like Claude Code, Codex, Cursor…",
+                text = "No matching agent processes. Opening Terminal or iTerm by itself does not appear here — only running CLIs (their own pid in ps), e.g. Claude Code, Codex, Gemini CLI, Cursor agent. Claude Desktop is hidden. If you started an agent and still see this, check: ps axww | grep -iE 'gemini|claude|codex|cursor'",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

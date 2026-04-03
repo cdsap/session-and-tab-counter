@@ -43,7 +43,7 @@ object HeadlessTerminal {
             println()
 
             if (running.isEmpty()) {
-                println("  $dim(no matching agent CLIs in ps — start claude-code, codex, …)$reset")
+                println("  $dim(no agent CLIs in ps — not Terminal.app; try gemini/claude-code/codex/cursor-agent)$reset")
             } else {
                 println("  $dim${running.size} process(es)$reset")
                 println()
