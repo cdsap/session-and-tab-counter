@@ -1,5 +1,6 @@
 package com.agentsessiontab
 
+import java.util.Locale
 import kotlin.concurrent.thread
 
 /**
@@ -47,7 +48,9 @@ object HeadlessTerminal {
                 println("  $dim${running.size} process(es)$reset")
                 println()
                 running.forEach { a ->
-                    val loc = if (a.cwd == null) "(cwd unknown)" else shortenHomePath(a.cwd)
+                    val loc = cwdDisplayForUi(a)
+                    val cpu = a.cpuPercent?.let { String.format(Locale.US, "%.1f%%", it) } ?: "—"
+                    val rss = formatRssKiB(a.rssKiB)
                     val act = when (a.activity.kind) {
                         ProcessActivityKind.Active -> green
                         ProcessActivityKind.IdleOrWaiting -> cyan
@@ -56,14 +59,15 @@ object HeadlessTerminal {
                         ProcessActivityKind.Unknown -> dim
                     }
                     println("  $bold${a.label}$reset  ${act}${a.activity.shortLabel}$reset  ${dim}ps ${a.activity.rawState}$reset")
-                    println("    $dim$loc$reset")
+                    println("    $bold cwd$reset  $loc")
+                    println("    ${dim}up ${a.uptime} · CPU $cpu · RSS $rss$reset")
                     println("    $dim pid ${a.pid} · ${a.argvPreview}$reset")
                     println()
                 }
             }
 
             println()
-            println("${dim}Idle/sleep between tool calls is normal · open a desktop session for the Compose UI$reset")
+            println("${dim}Tokens/context: not from OS — check agent UI · Idle/sleep between tool calls is normal$reset")
 
             Thread.sleep(5_000)
         }

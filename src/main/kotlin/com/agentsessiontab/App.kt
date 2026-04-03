@@ -36,8 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import java.awt.GraphicsEnvironment
-import java.nio.file.Path
-import kotlin.io.path.exists
+import java.util.Locale
 import kotlinx.coroutines.delay
 import java.util.concurrent.TimeUnit
 
@@ -51,11 +50,9 @@ private fun activityColor(kind: ProcessActivityKind): Color = when (kind) {
 
 @Composable
 private fun RunningAgentRow(agent: RunningAgent) {
-    val loc = when {
-        agent.cwd == null -> "(cwd unknown — lsof may need permissions)"
-        !Path.of(agent.cwd).exists() -> "${shortenHomePath(agent.cwd)} (path missing?)"
-        else -> shortenHomePath(agent.cwd)
-    }
+    val loc = cwdDisplayForUi(agent)
+    val cpuStr = agent.cpuPercent?.let { v -> String.format(Locale.US, "%.1f%% CPU", v) } ?: "CPU —"
+    val rssStr = "RSS ${formatRssKiB(agent.rssKiB)}"
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -84,9 +81,16 @@ private fun RunningAgentRow(agent: RunningAgent) {
     }
     Text(
         text = loc,
+        fontSize = 13.sp,
+        fontWeight = FontWeight.Medium,
+        color = Color(0xFF1B5E20),
+        modifier = Modifier.padding(bottom = 4.dp),
+    )
+    Text(
+        text = "Up ${agent.uptime} · $cpuStr · $rssStr",
         fontSize = 12.sp,
         color = Color(0xFF424242),
-        modifier = Modifier.padding(bottom = 2.dp),
+        modifier = Modifier.padding(bottom = 4.dp),
     )
     Text(
         text = "pid ${agent.pid} · ${agent.argvPreview}",
@@ -118,7 +122,7 @@ fun CounterView(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Live CLIs · working directory · scheduler state (from ps)",
+                text = "Live CLIs · cwd (lsof /proc) · uptime & CPU & RSS from ps",
                 fontSize = 12.sp,
                 color = Color.Gray,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
@@ -164,8 +168,13 @@ fun CounterView(
                 }
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = "Refreshes every 5s · Idle/sleep is normal between tool calls",
+                    text = "Refreshes every 5s · Token/context use is not from the OS (use each agent’s UI)",
                     fontSize = 11.sp,
+                    color = Color.Gray,
+                )
+                Text(
+                    text = "Idle/sleep between tool calls is normal",
+                    fontSize = 10.sp,
                     color = Color.Gray,
                 )
             }
@@ -182,14 +191,22 @@ fun AppPreview() {
             pid = 1001L,
             activity = ProcessActivity(ProcessActivityKind.IdleOrWaiting, "S"),
             cwd = "/Users/me/projects/demo",
+            cwdResolutionNote = null,
             argvPreview = "node …/claude-code …",
+            uptime = "01:42:07",
+            rssKiB = 186_000L,
+            cpuPercent = 1.2,
         ),
         RunningAgent(
             label = "Codex",
             pid = 2002L,
             activity = ProcessActivity(ProcessActivityKind.Active, "R"),
             cwd = "/Users/me/work",
+            cwdResolutionNote = null,
             argvPreview = "openai.cli.codex …",
+            uptime = "00:03:12",
+            rssKiB = 94_000L,
+            cpuPercent = 8.9,
         ),
     )
     MaterialTheme {

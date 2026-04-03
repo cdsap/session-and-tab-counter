@@ -1,6 +1,6 @@
 # Running agent tracker
 
-Desktop utility (Compose for Desktop) that lists **AI agent CLIs that are running right now**: which binary, **PID**, **current working directory** (via `lsof` / `/proc`), and a **scheduler hint** derived from `ps` state (`R` active, `S`/`I` idle or sleeping, `T` stopped, `Z` zombie). It does **not** scan session folders on disk—the focus is live processes.
+Desktop utility (Compose for Desktop) that lists **AI agent CLIs that are running right now**: **PID**, **cwd** (macOS: `lsof -Fn` on the cwd fd, then classic `lsof` table; Linux: `/proc/pid/cwd` then `lsof`), **upt** (**`etime`** from `ps`), **CPU %** and **RSS** from `ps`, plus scheduler **state** (`R` / `S` / …). **Token or context-window usage** is not available from the OS—use each vendor’s own UI or logs. It does **not** scan session folders on disk.
 
 ## Who gets detected
 
@@ -13,7 +13,7 @@ Processes whose command line matches heuristics in `RunningAgents.kt` (Claude, C
 - **JDK 17+**
 - **macOS** or **Linux** for `ps` and cwd resolution (`lsof` on macOS for cwd when `/proc` is not used)
 
-If cwd shows as unknown, macOS may need permission for the app (or parent terminal) to inspect other processes—try running from a full-access context or check **Full Disk Access** for `lsof`.
+If **cwd** stays unknown or wrong, the tracker process must be allowed to inspect others: on macOS grant **Full Disk Access** (or equivalent) to the JVM/terminal running the app so `lsof` can read cwd; on Linux run as a user that can read `/proc/<pid>/cwd` and run `lsof`.
 
 ## Build & run
 
