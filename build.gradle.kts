@@ -41,3 +41,10 @@ compose.desktop {
 kotlin {
     jvmToolchain(17)
 }
+
+/** Short console alias: `./gradlew agents` (same as `run`). */
+tasks.register("agents") {
+    group = "application"
+    description = "Run RunningAgentTracker (Compose desktop — same as :run)."
+    dependsOn(tasks.named("run"))
+}
