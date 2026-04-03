@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.JavaExec
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -47,4 +48,16 @@ tasks.register("agents") {
     group = "application"
     description = "Run RunningAgentTracker (Compose desktop — same as :run)."
     dependsOn(tasks.named("run"))
+}
+
+val forceAgentTrackerTerminal =
+    project.findProperty("agentTrackerTerminal")?.toString().equals("true", ignoreCase = true) ||
+        project.findProperty("tty")?.toString().equals("true", ignoreCase = true)
+
+afterEvaluate {
+    tasks.named<JavaExec>("run") {
+        if (forceAgentTrackerTerminal) {
+            systemProperty("agent.tracker.terminal", "true")
+        }
+    }
 }

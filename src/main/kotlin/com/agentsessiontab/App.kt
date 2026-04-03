@@ -147,8 +147,19 @@ fun AppPreview() {
     }
 }
 
+/** Terminal UI only: env `AGENT_TRACKER_TERMINAL=1`, JVM `-Dagent.tracker.terminal=true`, or `./gradlew … -PagentTrackerTerminal`. */
+private fun forceTerminalUi(): Boolean {
+    System.getProperty("agent.tracker.terminal")?.lowercase()?.let { v ->
+        if (v == "true" || v == "1" || v == "yes") return true
+    }
+    System.getenv("AGENT_TRACKER_TERMINAL")?.lowercase()?.let { v ->
+        if (v == "true" || v == "1" || v == "yes") return true
+    }
+    return false
+}
+
 fun main() {
-    if (GraphicsEnvironment.isHeadless()) {
+    if (forceTerminalUi() || GraphicsEnvironment.isHeadless()) {
         HeadlessTerminal.run()
         return
     }
